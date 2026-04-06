@@ -1058,11 +1058,11 @@ Before writing any report file (`findings.md`, `threat-model.md`, `recommendatio
 
 | Pattern | Replacement |
 |---------|-------------|
-| `[\w.+-]+@[\w-]+\.[\w.]+` (email) | `[REDACTED_EMAIL]` |
-| `\b\d{3}[-.]?\d{3}[-.]?\d{4}\b` (phone) | `[REDACTED_PHONE]` |
-| `(?i)(api_key\|secret\|password\|token\|bearer)\s*[:=]\s*['"][\w-]{8,}['"]` | `[REDACTED_SECRET]` |
+| `[\w.+\-]+@[\w\-]+\.[\w.]+` (email) | `[REDACTED_EMAIL]` |
+| `\b\d{3}[-.]\d{3}[-.]\d{4}\b` (phone) | `[REDACTED_PHONE]` |
+| `(?i)(api_key|secret|password|token|bearer)\s*[:=]\s*['"][\w\-]{8,}['"]` | `[REDACTED_SECRET]` |
 | `\b(?:\d{1,3}\.){3}\d{1,3}\b` (IP in hardcoded context) | `[REDACTED_IP]` |
-| `(?i)(aws_access_key_id\|aws_secret)\s*[:=]\s*[\w/+]{16,}` | `[REDACTED_AWS_KEY]` |
+| `(?i)(aws_access_key_id|aws_secret)\s*[:=]\s*[\w/+]{16,}` | `[REDACTED_AWS_KEY]` |
 
 These patterns match the PII scrubbing used in `/autoresearch:predict` reports. Apply them universally — if a finding's evidence snippet contains a live secret, redact it before writing to disk.
 
