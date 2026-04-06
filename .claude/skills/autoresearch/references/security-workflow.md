@@ -46,6 +46,46 @@ You MUST call `AskUserQuestion` with all 3 questions in ONE call:
 
 If flags are provided inline, skip interactive setup and proceed directly.
 
+## Scope Validation (MANDATORY — run before loop starts)
+
+**CRITICAL — before entering the loop**, resolve and log all in-scope files so the user can verify the boundary:
+
+```
+1. Expand every scope glob to a concrete file list using the filesystem.
+   Example: src/**/*.ts → resolve to an explicit list of matching files.
+
+2. Print the resolved file list:
+   === Scope Validated ===
+   Files in scope ({N} total):
+     src/api/users.ts
+     src/middleware/auth.ts
+     ...
+
+3. WARN if any resolved path looks unintended:
+   - Paths outside the project root → WARN: "File {path} is outside the project root — is this intended?"
+   - Sensitive filenames (.env, *.pem, *.key, *secret*, *credential*, *password*):
+     → WARN: "Scope includes sensitive file {path}. Skipping to avoid reading secrets. Add it explicitly if intended."
+
+4. On the FIRST iteration only, call AskUserQuestion:
+   Header: "Confirm Scope"
+   Question: "I resolved your scope to {N} files (listed above). Proceed with this scope?"
+   Options: ["Yes, proceed", "No — let me refine the scope"]
+   → If user says "No": ask them to re-specify Scope and re-validate. Do NOT enter the loop until confirmed.
+   → If scope was provided inline (flags), this confirmation step is skipped.
+```
+
+**Sensitive file guard — universal (applies to ALL file reads):**
+
+Before reading ANY file during reconnaissance or loop phases, check the filename against this pattern:
+
+```regex
+(?i)(\.env$|\.env\.|\.pem$|\.key$|\.p12$|\.pfx$|secret|credential|password|id_rsa|id_ed25519)
+```
+
+If matched:
+- Do NOT read the file content.
+- Print: `⚠️ Skipping {filename} — matches sensitive file pattern. If you need this file audited, add it to scope explicitly after confirming it contains no live secrets.`
+
 ## Architecture
 
 ```
@@ -596,16 +636,25 @@ After completing the audit, switches to standard autoresearch modify→verify lo
 Iterations: 10
 ```
 
+> ⚠️ **Auto-fix should only be used when the codebase has comprehensive test coverage for the files being modified.** If there are no tests for the code being fixed, regressions will not be caught automatically. Review the test coverage before enabling this mode.
+
 **How it works:**
 
 1. Run the full security audit (setup + loop + report)
 2. Filter findings: only **Confirmed** severity **Critical** and **High**
-3. Switch to `/autoresearch:fix` with findings context:
+3. **MANDATORY HUMAN CONFIRMATION GATE** — Before applying any code changes, you MUST:
+   - Print the full list of findings to be fixed (severity, location, description)
+   - Call `AskUserQuestion` with:
+     - Header: `Confirm Auto-Fix`
+     - Question: `I found {N} confirmed Critical/High findings. Review the list above. Do you want me to automatically apply fixes?`
+     - Options: `"Yes, fix all {N} findings"`, `"Yes, fix Critical only ({n} findings)"`, `"No — report only, I will fix manually"`
+   - **DO NOT proceed to any fix iteration without explicit user confirmation.** If the user selects "No" or does not confirm, generate the report and stop.
+4. Switch to `/autoresearch:fix` with findings context:
    - **Target:** Re-run the security checks that found each vulnerability
    - **Scope:** Files referenced in findings (file:line locations)
    - Pass the filtered findings list as context so fix knows WHAT to fix
    - Fix picks highest-severity unfixed finding each iteration
-4. For each fix iteration:
+5. For each fix iteration:
    - Pick the highest-severity unfixed finding
    - Apply the mitigation from `recommendations.md`
    - Commit the fix
@@ -995,10 +1044,27 @@ jwt.verify(token, secret, { algorithms: ['HS256'] });
 
 Add to `.gitignore` (if not already present):
 ```
-security-audit-results.tsv
+# Security audit reports — opt-in to committing; by default, keep local
+security/
 ```
 
-The `.tsv` iteration log is a working file. The `.md` reports are meant to be committed and shared.
+> ⚠️ **Security reports contain vulnerability details, attack surface maps, and dependency CVE lists.** On public repositories, committed reports are publicly readable and may be downloaded by anyone. The `security/` folder is gitignored by default. If you want to commit reports (e.g., for team sharing), remove `security/` from `.gitignore` — but do this deliberately and only on private repositories, or after all reported vulnerabilities are remediated.
+
+The `.tsv` iteration log and all `.md` reports are excluded by the `security/` gitignore entry. If you choose to commit reports, review them for sensitive information before pushing.
+
+### PII Scrubbing in Reports
+
+Before writing any report file (`findings.md`, `threat-model.md`, `recommendations.md`, `overview.md`), apply these redaction patterns to all output content:
+
+| Pattern | Replacement |
+|---------|-------------|
+| `[\w.+-]+@[\w-]+\.[\w.]+` (email) | `[REDACTED_EMAIL]` |
+| `\b\d{3}[-.]?\d{3}[-.]?\d{4}\b` (phone) | `[REDACTED_PHONE]` |
+| `(?i)(api_key\|secret\|password\|token\|bearer)\s*[:=]\s*['"][\w-]{8,}['"]` | `[REDACTED_SECRET]` |
+| `\b(?:\d{1,3}\.){3}\d{1,3}\b` (IP in hardcoded context) | `[REDACTED_IP]` |
+| `(?i)(aws_access_key_id\|aws_secret)\s*[:=]\s*[\w/+]{16,}` | `[REDACTED_AWS_KEY]` |
+
+These patterns match the PII scrubbing used in `/autoresearch:predict` reports. Apply them universally — if a finding's evidence snippet contains a live secret, redact it before writing to disk.
 
 ## Input Safety
 

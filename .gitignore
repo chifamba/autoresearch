@@ -21,3 +21,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Security audit reports — contain vulnerability details; opt-in to committing
+# Remove this entry deliberately on private repos if team sharing is needed
+security/

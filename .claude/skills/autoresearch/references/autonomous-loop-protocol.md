@@ -44,6 +44,40 @@ ls .pre-commit-config.yaml 2>/dev/null && echo "INFO: pre-commit framework detec
 **If any FAIL:** Stop and inform user. Do not enter the loop with broken preconditions.
 **If any WARN:** Log the warning, proceed with caution, inform user.
 
+## Phase 0.5: Scope Validation (before loop starts, after precondition checks)
+
+**MUST complete before entering the loop.** This ensures the agent only modifies files the user intended.
+
+```
+1. Expand the Scope glob(s) to a concrete file list.
+   Example: "src/**/*.ts" → resolve all matching paths on disk.
+
+2. Filter out sensitive files — before reading or modifying ANY file, check its name:
+   Pattern: (?i)(\.env$|\.env\.|\.pem$|\.key$|\.p12$|\.pfx$|secret|credential|password|id_rsa|id_ed25519)
+   → If matched: SKIP the file. Print:
+     ⚠️ Skipping {filename} — matches sensitive file pattern.
+        If you intend to include it, add it explicitly to scope after confirming it has no live secrets.
+
+3. Print the resolved, filtered file list so the user can verify the boundary:
+   === Scope Resolved ({N} files) ===
+     src/api/users.ts
+     src/middleware/auth.ts
+     ...
+   Files matching sensitive pattern (skipped): {list or "none"}
+
+4. WARN on any path outside the project root:
+   ⚠️ Resolved path {path} is outside the project root. Is this intended?
+
+5. On the FIRST iteration, confirm with the user (skip if all scope was provided via flags and is unambiguous):
+   Call AskUserQuestion:
+     Header: "Confirm Scope"
+     Question: "I resolved your scope to {N} files (listed above). Proceed?"
+     Options: ["Yes, proceed", "No — let me refine the scope"]
+   → If "No": re-ask for Scope and repeat validation. Do NOT enter the loop until confirmed.
+```
+
+**NEVER modify files outside the resolved, user-confirmed scope list.** If a fix or experiment requires touching a file not in scope, log it as out-of-scope and skip that change.
+
 ## Phase 1: Review (30 seconds)
 
 Before each iteration, build situational awareness. **You MUST complete ALL 6 steps — git history is critical for learning from past iterations.**
